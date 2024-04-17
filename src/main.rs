@@ -20,6 +20,33 @@ enum RCODE {
 }
 
 #[derive(Debug)]
+struct DnsAnswer {
+    name: DnsLabels,
+    answer_type: u16,
+    class: u16,
+    ttl: u32,
+    data: Vec<u8>,
+}
+
+
+impl DnsAnswer {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(&self.name.to_bytes());
+        bytes.extend(&self.answer_type.to_be_bytes());
+        bytes.extend(&self.class.to_be_bytes());
+        bytes.extend(&self.ttl.to_be_bytes());
+        bytes.extend((self.data.len() as u16).to_be_bytes());
+        for v in &self.data {
+            bytes.extend(v.to_be_bytes());
+        }
+
+        println!("DEBUG: answer {bytes:?}");
+        bytes
+    }
+}
+
+#[derive(Debug)]
 struct DnsLabels(Vec<String>);
 
 impl DnsLabels {
@@ -104,6 +131,7 @@ impl DnsHeader {
 struct DnsMessage {
     header: DnsHeader,
     question: Option<DnsQuestion>,
+    answer: Option<DnsAnswer>,
 }
 
 impl DnsMessage {
@@ -114,7 +142,9 @@ impl DnsMessage {
         if let Some(question) = &self.question {
             bytes.extend(question.to_bytes());
         }
-
+        if let Some(answer) = &self.answer {
+            bytes.extend(answer.to_bytes());
+        }
 
         bytes
     }
@@ -177,45 +207,48 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 continue;
             };
-            // match a {
-            //     Ok((left, x)) => {
-            //
-            //         println!("DEBUG: left {left:?}");
-            //     }
-            //     Err(err) => {
-            //         // Err(anyhow!("ERROR: failed parsing dns header with '{err}'"))?
-            //     }
-            // }
-            let response =
-                DnsMessage {
-                    header: DnsHeader
-                    {
-                        id: req.id,
-                        qr: 0,
-                        opcode: 0,
-                        aa: 0,
-                        tc: 0,
-                        rd: 0,
-                        ra: 0,
-                        z: 0,
-                        rcode: 0,
-                        qdcount: 0,
-                        ancount: 0,
-                        nscount: 0,
-                        arcount: 0,
-                    },
-                    question: Some(
-                        DnsQuestion {
-                            labels: DnsLabels(
-                                vec![
-                                    "codecrafters".to_string(),
-                                    "io".to_string(),
-                                ]),
-                            q_type: 1,
-                            class: 1,
-                        }
-                    ),
-                };
+            let response = DnsMessage {
+                header: DnsHeader
+                {
+                    id: req.id,
+                    qr: 1,
+                    opcode: 0,
+                    aa: 0,
+                    tc: 0,
+                    rd: 0,
+                    ra: 0,
+                    z: 0,
+                    rcode: 0,
+                    qdcount: 1,
+                    ancount: 1,
+                    nscount: 0,
+                    arcount: 0,
+                },
+                question: Some(
+                    DnsQuestion {
+                        labels: DnsLabels(
+                            vec![
+                                "codecrafters".to_string(),
+                                "io".to_string(),
+                            ]),
+                        q_type: 1,
+                        class: 1,
+                    }
+                ),
+                answer: Some(
+                    DnsAnswer {
+                        name: DnsLabels(
+                            vec![
+                                "codecrafters".to_string(),
+                                "io".to_string(),
+                            ]),
+                        answer_type: 1,
+                        class: 1,
+                        ttl: 60,
+                        data: vec![8, 8, 8, 8],
+                    }
+                ),
+            };
             println!("DEBUG: response {response:?}");
             println!("DEBUG: response as bytes {:?}", response.to_bytes());
             match sender.send_to(&response.to_bytes(), &addr).await {
